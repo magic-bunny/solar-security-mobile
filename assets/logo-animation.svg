@@ -1,0 +1,76 @@
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+    width="100%" viewBox="0 0 400 480" xml:space="preserve" stroke="#08d9fc">
+    
+    <defs>
+        <!-- Glow effect filter -->
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+            <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+    </defs>
+
+    <style>
+        /* Path animation */
+        path {
+            fill: none;
+            stroke: #08d9fc;
+            stroke-width: 0.5;
+            stroke-dasharray: 400;
+            stroke-dashoffset: 400;
+            filter: url(#glow);
+            animation: draw 8s linear forwards, glowPulse 2s ease-in-out infinite;
+        }
+
+        /* Text animation */
+        text {
+            font-family: Arial, sans-serif;
+            font-weight: 650;
+            font-size: 122px;
+            fill: #08d9fc;
+            text-anchor: middle;
+            animation: fadeIn 6s ease-in-out 6s forwards, glowPulse 3s ease-in-out infinite;
+            opacity: 0;
+        }
+
+        @keyframes draw {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes glowPulse {
+            0%, 100% {
+                filter: drop-shadow(0px 0px 1px #08d9fc);
+            }
+            50% {
+                filter: drop-shadow(0px 0px 15px #08d9fc);
+            }
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+    </style>
+
+    <g transform="translate(35, 20) scale(14.00)">
+        <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
+        <g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g>
+        <g id="SVGRepo_iconCarrier" stroke-width="0">
+            <g>
+                <!-- Path animations -->
+                <path class="cls-1" d="M12.54,12.43V8h0a1.14,1.14,0,1,0-1,0v4.42H7.27V9.6a1.14,1.14,0,0,0-.53-2.15A1.14,1.14,0,0,0,6.22,9.6v2.83H6a3.82,3.82,0,1,1,1.4-7.38A5.22,5.22,0,0,1,16.84,5a4,4,0,0,1,1.23-.2h0a3.83,3.83,0,0,1,0,7.66h-.25V9.6a1.14,1.14,0,1,0-1.06,0v2.83Z"></path>
+                <path class="cls-2" d="M7.27,15.39a2,2,0,0,1,1.54,2,2.07,2.07,0,1,1-2.59-2V12.43h1Zm-.53,3a1,1,0,1,0,0-2,1,1,0,0,0,0,2Zm11.08-3a2.07,2.07,0,1,1-1.06,0V12.44h1.06Zm-.53,3a1,1,0,0,0,.39-1.94,1,1,0,1,0-.39,1.94Zm-4.75-.43h0a2.06,2.06,0,1,1-1,0v-5.5h1.06Zm-.54,3a1,1,0,1,0-.93-.62A1,1,0,0,0,12,20.94Z"></path>
+            </g>
+        </g>
+    </g>
+
+    <!-- Text animation -->
+   <text x="50%" y="90%">
+      v.o.z
+   </text>
+</svg>
