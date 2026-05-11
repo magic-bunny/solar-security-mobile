@@ -1,0 +1,94 @@
+name: Build All Platforms
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: stable
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath solar-security-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: solar-security-windows.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: stable
+      - run: flutter pub get
+      - run: flutter build macos --release
+      - run: cd build/macos/Build/Products/Release && zip -r $GITHUB_WORKSPACE/solar-security-macos.zip *.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: solar-security-macos.zip
+
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: stable
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - run: cp build/app/outputs/flutter-apk/app-release.apk solar-security.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: solar-security.apk
+
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: stable
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+      - run: cd build/ios/iphoneos && zip -r $GITHUB_WORKSPACE/solar-security-ios.zip Runner.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-release
+          path: solar-security-ios.zip
+
+  release:
+    needs: [build-windows, build-macos, build-android, build-ios]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/windows-release/solar-security-windows.zip
+            artifacts/macos-release/solar-security-macos.zip
+            artifacts/android-release/solar-security.apk
+            artifacts/ios-release/solar-security-ios.zip
