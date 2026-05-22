@@ -37,6 +37,6 @@ class ApiService {
   // --- Device logs ---
   Future<List<Map<String, dynamic>>> getLogs({int limit = 50}) async {
     final res = await _req('get_logs', {'limit': limit});
-    return (res['data'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    return (res['data'] as List?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
   }
 }

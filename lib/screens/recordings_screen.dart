@@ -71,8 +71,30 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
 
   Future<Map<String, dynamic>> _cmd(String action, [Map<String, dynamic>? params]) async {
     final dc = _conn?.dc;
-    if (dc == null || !dc.isOpen) throw Exception('MCU DataChannel not open');
+    if (dc == null || !dc.isOpen) {
+      // Retry: wait for reconnect
+      for (var i = 0; i < 10; i++) {
+        await Future.delayed(const Duration(seconds: 1));
+        final d = _conn?.dc;
+        if (d != null && d.isOpen) return d.request(action, params);
+      }
+      throw Exception('DataChannel not open');
+    }
     return dc.request(action, params);
+  }
+
+  Future<void> _loadThumbnails() async {
+    for (var i = 0; i < _recordings.length; i++) {
+      final rec = _recordings[i];
+      if (rec['has_thumb'] != true) continue;
+      try {
+        final res = await _cmd('get_thumbnail', {'camera_id': rec['camera_id'] ?? widget.cameraId, 'file': rec['file']});
+        final data = res['data'] as String? ?? '';
+        if (data.isNotEmpty && mounted) {
+          setState(() => _recordings[i]['thumbnail_b64'] = data);
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _loadRecordings() async {
@@ -82,11 +104,13 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
         if (widget.cameraId != null) 'camera_id': widget.cameraId,
       });
       if (mounted) setState(() {
-        _recordings = (res['recordings'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        _recordings = (res['recordings'] as List?)?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ?? [];
         _total = res['total'] ?? 0;
         _offset = _recordings.length;
         _loading = false;
       });
+      // Fetch thumbnails in background
+      _loadThumbnails();
     } catch (e) {
       debugPrint('[Recordings] load error: $e');
       if (mounted) setState(() => _loading = false);

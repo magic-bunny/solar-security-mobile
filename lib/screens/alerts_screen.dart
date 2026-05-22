@@ -84,17 +84,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 
   String? _getSbcUrl() {
-    final conn = context.read<ConnectionProvider>();
-    for (final c in conn.connections.values) {
-      final dev = context.read<DeviceProvider>().getDevice(c.deviceId);
-      if (dev == null) continue;
-      for (final sd in dev.config?.mcu.subDevices ?? []) {
-        if (sd['type'] == 'SBC' && sd['host'] != null) {
-          return 'http://${sd['host']}:${sd['port'] ?? 8160}';
-        }
-      }
-    }
-    return null;
+    return null; // No longer used — alarms fetched via P2P DataChannel
   }
 
   Future<void> _loadAlarms({bool refresh = false}) async {

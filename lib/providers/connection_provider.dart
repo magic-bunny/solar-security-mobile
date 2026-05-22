@@ -32,6 +32,7 @@ class DeviceConnection {
   // Live data
   final List<Map<String, dynamic>> alarms = [];
   final List<Map<String, dynamic>> aiEvents = [];
+  final List<Map<String, dynamic>> logs = [];
   Map<String, dynamic>? latestTelemetry;
   Map<String, dynamic>? latestConfig;
   Map<String, dynamic>? sbcStats;
@@ -66,7 +67,8 @@ class ConnectionProvider extends ChangeNotifier {
     });
   }
 
-  Map<String, DeviceConnection> get connections => Map.unmodifiable(_connections);
+  Map<String, DeviceConnection> get connections =>
+      Map.unmodifiable(_connections);
   String? get activeDeviceId => _activeDeviceId;
   DeviceConnection? getConnection(String id) => _connections[id];
   ApiService get api => _connections[_activeDeviceId]?.api ?? ApiService();
@@ -92,10 +94,11 @@ class ConnectionProvider extends ChangeNotifier {
       _authProvider = auth;
       if (dp.devices.isEmpty) await dp.loadDevices();
       _token = await auth.getIdToken() ?? 'dev-token';
-      for (final d in dp.devices.where((d) => d.status == 'online')) {
+      for (final d in dp.devices) {
         final existing = _connections[d.id];
         if (existing == null) {
-          _connectDeviceInternal(token: _token!, deviceId: d.id, cameraCount: d.cameraCount);
+          _connectDeviceInternal(
+              token: _token!, deviceId: d.id, cameraCount: d.cameraCount);
         }
       }
     } finally {
@@ -104,14 +107,19 @@ class ConnectionProvider extends ChangeNotifier {
   }
 
   Future<void> connectDevice({
-    required String token, required String deviceId, int cameraCount = 4,
+    required String token,
+    required String deviceId,
+    int cameraCount = 4,
   }) async {
     _token = token;
-    await _connectDeviceInternal(token: token, deviceId: deviceId, cameraCount: cameraCount);
+    await _connectDeviceInternal(
+        token: token, deviceId: deviceId, cameraCount: cameraCount);
   }
 
   Future<void> _connectDeviceInternal({
-    required String token, required String deviceId, int cameraCount = 4,
+    required String token,
+    required String deviceId,
+    int cameraCount = 4,
   }) async {
     await _disconnectDevice(deviceId);
     final conn = DeviceConnection(deviceId: deviceId, cameraCount: cameraCount);
@@ -155,16 +163,29 @@ class ConnectionProvider extends ChangeNotifier {
           } else if (type == 'telemetry') {
             conn.latestTelemetry = msg;
             _safeNotify();
+          } else if (type == 'logs') {
+            final data = msg['data'] as List? ?? [];
+            for (final l in data) {
+              conn.logs.add(Map<String, dynamic>.from(l as Map));
+            }
+            if (conn.logs.length > 500) {
+              conn.logs.removeRange(0, conn.logs.length - 500);
+            }
+            _safeNotify();
           } else if (type == 'config_updated') {
-            debugPrint('[Conn] Config updated for $deviceId, refreshing from Cloud API...');
+            debugPrint(
+                '[Conn] Config updated for $deviceId, refreshing from Cloud API...');
             onConfigUpdated?.call();
             // Pull fresh device list from Cloud API
             () async {
               if (_deviceProvider != null) {
                 await _deviceProvider!.loadDevices();
-                final device = _deviceProvider!.devices.where((d) => d.id == deviceId).firstOrNull;
+                final device = _deviceProvider!.devices
+                    .where((d) => d.id == deviceId)
+                    .firstOrNull;
                 final newCameraCount = device?.cameraCount ?? conn.cameraCount;
-                debugPrint('[Conn] New cameraCount=$newCameraCount for $deviceId');
+                debugPrint(
+                    '[Conn] New cameraCount=$newCameraCount for $deviceId');
                 _safeNotify();
                 Future.delayed(const Duration(seconds: 3), () async {
                   if (_connections.containsKey(deviceId)) {
@@ -194,12 +215,12 @@ class ConnectionProvider extends ChangeNotifier {
       // SBC video connection — non-blocking, don't hold up MCU
       _connectSbc(conn, token, deviceId, cameraCount);
 
-      // Timeout: if MCU DataChannel not connected in 30s, retry MCU only (don't kill SBC)
-      Future.delayed(const Duration(seconds: 30), () {
+      // A device is considered online only after the SBC data P2P channel opens.
+      Future.delayed(const Duration(seconds: 12), () async {
         final c = _connections[deviceId];
-        if (c != null && !c.connected) {
-          debugPrint('[Conn] MCU timeout $deviceId, retrying MCU...');
-          _reconnectMcu(deviceId);
+        if (identical(c, conn) && !conn.connected) {
+          debugPrint('[Conn] SBC DataChannel timeout for $deviceId');
+          await _disconnectDevice(deviceId);
         }
       });
     } catch (e) {
@@ -208,20 +229,24 @@ class ConnectionProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> _connectSbc(DeviceConnection conn, String token, String deviceId, int cameraCount) async {
+  Future<void> _connectSbc(DeviceConnection conn, String token, String deviceId,
+      int cameraCount) async {
     try {
       conn.sbcWs = WebSocketService();
       conn.sbcWebrtc = WebRTCService(conn.sbcWs!);
       conn.streamSub?.cancel();
-      conn.streamSub = conn.sbcWebrtc!.onRemoteStreams.listen((_) => _safeNotify());
+      conn.streamSub =
+          conn.sbcWebrtc!.onRemoteStreams.listen((_) => _safeNotify());
       conn.stateSub?.cancel();
       conn.stateSub = conn.sbcWebrtc!.onStateChange.listen((_) {
         _safeNotify();
       });
-      await conn.sbcWs!.connect(token: token, deviceId: deviceId, purpose: 'video');
+      await conn.sbcWs!
+          .connect(token: token, deviceId: deviceId, purpose: 'video');
       debugPrint('[Conn] SBC connected, cameraCount=$cameraCount');
       // Connect cameras with sbcId for multi-SBC routing
-      final device = _deviceProvider?.devices.where((d) => d.id == deviceId).firstOrNull;
+      final device =
+          _deviceProvider?.devices.where((d) => d.id == deviceId).firstOrNull;
       final cameras = device?.cameras ?? [];
       if (cameras.isNotEmpty) {
         // Group by SBC, each SBC's cameras indexed from 0
@@ -233,13 +258,18 @@ class ConnectionProvider extends ChangeNotifier {
         for (final entry in sbcGroups.entries) {
           for (var i = 0; i < entry.value.length; i++) {
             final cam = entry.value[i];
-            final sessionKey = entry.key.isNotEmpty ? '${entry.key}:${cam.id}' : cam.id;
-            await conn.sbcWebrtc!.connectCamera(sessionKey, sbcId: entry.key.isNotEmpty ? entry.key : null, remoteCameraName: cam.id);
+            final sessionKey =
+                entry.key.isNotEmpty ? '${entry.key}:${cam.id}' : cam.id;
+            await conn.sbcWebrtc!.connectCamera(sessionKey,
+                sbcId: entry.key.isNotEmpty ? entry.key : null,
+                remoteCameraName: cam.id);
           }
         }
       } else {
         for (var i = 0; i < cameraCount; i++) {
-          await conn.sbcWebrtc!.connectCamera('cam$i');
+          final camId = 'cam-${i + 1}';
+          await conn.sbcWebrtc!
+              .connectCamera(camId, remoteCameraName: camId);
         }
       }
     } catch (e) {
@@ -264,6 +294,7 @@ class ConnectionProvider extends ChangeNotifier {
     _scheduleReconnect(id);
   }
 
+  // ignore: unused_element
   Future<void> _reconnectMcu(String id) async {
     final conn = _connections[id];
     if (conn == null || _token == null) return;
@@ -292,10 +323,20 @@ class ConnectionProvider extends ChangeNotifier {
         conn.pushSub?.cancel();
         conn.pushSub = conn.dc.onPush.listen((msg) {
           final type = msg['type'];
-          if (type == 'alarm_new') { conn.hasNewAlarms = true; _safeNotify(); }
-          else if (type == 'telemetry') { conn.latestTelemetry = msg; _safeNotify(); }
-          else if (type == 'config_updated') { conn.latestConfig = msg; onConfigUpdated?.call(); _safeNotify(); }
-          else if (type == 'sbc_stats') { conn.sbcStats = msg['data'] as Map<String, dynamic>?; _safeNotify(); }
+          if (type == 'alarm_new') {
+            conn.hasNewAlarms = true;
+            _safeNotify();
+          } else if (type == 'telemetry') {
+            conn.latestTelemetry = msg;
+            _safeNotify();
+          } else if (type == 'config_updated') {
+            conn.latestConfig = msg;
+            onConfigUpdated?.call();
+            _safeNotify();
+          } else if (type == 'sbc_stats') {
+            conn.sbcStats = msg['data'] as Map<String, dynamic>?;
+            _safeNotify();
+          }
         });
         _safeNotify();
       });
@@ -313,7 +354,8 @@ class ConnectionProvider extends ChangeNotifier {
     _safeNotify();
     Future.delayed(const Duration(seconds: 3), () async {
       if (!_connections.containsKey(id)) return;
-      await _connectDeviceInternal(token: _token!, deviceId: id, cameraCount: conn.cameraCount);
+      await _connectDeviceInternal(
+          token: _token!, deviceId: id, cameraCount: conn.cameraCount);
     });
   }
 
@@ -339,12 +381,17 @@ class ConnectionProvider extends ChangeNotifier {
   }
 
   Future<void> disconnectAll() async {
-    for (final id in _connections.keys.toList()) await _disconnectDevice(id);
+    for (final id in _connections.keys.toList()) {
+      await _disconnectDevice(id);
+    }
     _activeDeviceId = null;
     _token = null;
     _safeNotify();
   }
 
   @override
-  void dispose() { disconnectAll(); super.dispose(); }
+  void dispose() {
+    disconnectAll();
+    super.dispose();
+  }
 }

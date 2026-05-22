@@ -84,13 +84,14 @@ class WebRTCService {
     _dataChannel!.onDataChannelState = (state) {
       if (state == RTCDataChannelState.RTCDataChannelOpen && !_disposed) _dcController.add(_dataChannel!);
     };
-    _dataPc!.onIceCandidate = (c) => _ws.sendSignal(type: 'candidate', candidate: {
-      'candidate': c.candidate, 'sdpMid': c.sdpMid, 'sdpMLineIndex': c.sdpMLineIndex,
-    });
+    _dataPc!.onIceCandidate = (c) {};  // no trickle, full offer
     _wsSub ??= _ws.messages.listen(_onSignal);
     final offer = await _dataPc!.createOffer();
     await _dataPc!.setLocalDescription(offer);
-    _ws.sendSignal(type: 'offer', sdp: offer.sdp);
+    await _waitGatheringComplete(_dataPc!);
+    final desc = await _dataPc!.getLocalDescription();
+    debugPrint('[WebRTC] data sending offer with candidates (${desc?.sdp?.length ?? 0} bytes)');
+    _ws.sendSignal(type: 'offer', sdp: desc?.sdp ?? offer.sdp);
   }
 
   /// Start a video session for a single camera.
